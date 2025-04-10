@@ -41,34 +41,52 @@ sites_data <- read_csv(here(path_raw, sites_csv))
 eggs_data <- read_csv(here(path_raw, eggs_csv))
 
 species_data <- read_csv(here(path_raw, species_csv))
+
+nest_data <- read_csv(here(path_raw, nests_csv))
 ```
 
 
 Let's compute the number of eggs per nest. The column `Egg-num` seems to be a good candidate to estimate the number of eggs per nest:
 
 ```{r}
-eggs_sum <- eggs_data %>%
-  
+eggs_sum <- eggs_data %>% 
+  group_by(Site, Year, Nest_ID) %>% 
+  # decided to use max number of eggs, but could have used number of rows as well
+  summarize(Egg_count = max(Egg_num)) %>% 
+  ungroup()
 ```
 
-Then we can join with the nest table to bring the species information:
+Then we can join with the nest table to bring the species information. To be safe, we'll join by Year, Site, and Nest_ID:
 
 ```{r}
-nest_species <- eggs_sum %>%
+nest_egg_sum <- eggs_sum %>% 
+  left_join(nest_data, 
+            join_by(Year, Site, Nest_ID))
   
 ```
 
 Now we can group by species:
 
 ```{r}
-nest_species_avg <- nest_species %>%
+# group by species and find the average egg count for each species
+nest_species_avg <- nest_egg_sum %>% 
+  group_by(Species) %>% 
+  summarize(Avg_egg_count = mean(Egg_count))
+
+
+# arrange the average egg count in a descending order 
+nest_species_avg %>% arrange(desc(Avg_egg_count))
   
 ```
 
 Finally it would be better to have the name of the species and not only the 4-letter acronym:
 
 ```{r}
-nest_species_avg <- nest_species_avg %>%
+nest_species_avg <- nest_species_avg %>% 
+  left_join(species_data, 
+            join_by(Species == Code)) %>%  # Code column in species_data = Species 
+  select(-c(Common_name, Relevance))
+
   
 ```
 
@@ -86,7 +104,7 @@ nest_species_avg %>%
 
 ## Question 2: Does the snow amount & timing impact the number of eggs? Is it species dependant?
 
-Since the observations are made a different time, we will aggragate the data by month to have an common denominator in time.
+Since the observations are made a different time, we will aggregate the data by month to have an common denominator in time.
 
 ### Summarize the nests table
 
@@ -101,7 +119,8 @@ glimpse(nests_data)
 Yeah! `Date_found` is already in date format! We can thus directly aggregate the data by months:
 
 ```{r}
-nests_month <- nests_data %>%
+nests_month <- nests_data %>% 
+  mutate(Month = lubridate::month(Date_found))
   
 ```
 
@@ -118,7 +137,8 @@ glimpse(snowcover_data)
 The Date is stored as a character :/, we thus first we need to transform the date in date format before computing the monthly aggregate:
 
 ```{r}
-snowcover_data_fixed <- snowcover_data %>%
+snowcover_data_fixed <- snowcover_data %>% 
+  mutate(Date2 = as_date(Date))
   
 ```
 
@@ -126,6 +146,7 @@ We have 72 errors. Let's have a look at the date which failed:
 
 ```{r}
 snowcover_data_fixed %>% 
+  filter(is.na(Date2))
 
 ```
 
@@ -134,7 +155,10 @@ It is because 2 days were entered as one value `8&9 june 06`, it is not in the e
 
 ```{r}
 snowcover_data_fixed <- snowcover_data_fixed %>%
+  mutate(Date2 = ifelse(Date == "8&9 june 06", "08-06-2006", Date))
   
+
+
 ```
 
 Mmm the Dates are not what we were expecting... It generally means there are different date types. Let's start by fixing the problematic dates before transforming it to the date format.
